@@ -7,7 +7,7 @@ Nushell implementation of the OSC 7501 Program Status Protocol.
 - `nu/mod.nu` - public `program-status encode`, `program-status emit`, and `program-status exclusions` commands.
 - `nu/hooks.nu` - optional automatic completion reporting via `program-status install-hooks`.
 - `nu/internal.nu` - internal helpers and exclusion logic.
-- `nu/data/native-reporters.nuon` - curated registry of programs that already emit OSC 7501.
+- `nu/data/exclusions.nuon` - curated default exclusions (`prefix` and `reason`).
 - `tests/protocol.nu` - protocol tests.
 - `tests/hooks_pty.py` - end-to-end PTY tests.
 
@@ -68,25 +68,30 @@ Includes remove only an exclusion whose normalized prefix is exactly equal to
 the included prefix. Including `docker` does not remove the `docker agent`
 exclusion; include `docker agent` to override that specific rule.
 
-## Native reporter registry
+## Default exclusions registry
 
-`nu/data/native-reporters.nuon` is a small, checked-in registry of programs
-that already send OSC 7501 reports. It is used only to avoid duplicate
-completion reports. The registry records the executable command (not a project
-slug), an optional subcommand prefix, the first supporting version, whether
-reporting is automatic or opt-in, an evidence URL, and the date the entry was
-checked.
+`nu/data/exclusions.nuon` is a small, checked-in list of curated default
+exclusions. It contains only runtime-relevant data: `prefix` and `reason`
+(`native-status` or `interactive`). It is not a readiness database and does not
+store version, evidence, or opt-in metadata.
 
-Only confirmed, shipped, automatic program reporters are defaults. Working or
-pending implementations, terminal consumers, libraries, and opt-in reporters are
-not excluded by default. Users can still add or remove rules with
-`--exclude`/`--include`.
+Curated defaults fall into two groups:
 
-The registry is not a runtime network source. Update it manually from
-https://areweosc7501yet.com/data.json (schemaVersion 3) and upstream release
-notes. No version detection is performed at runtime; the recorded versions are
-documentation of the first supporting release. Older installations or disabled
-plugins can be handled with `--exclude`/`--include`.
+- `native-status`: programs that already send OSC 7501 reports, to avoid
+  duplicate completion reports.
+- `interactive`: common terminal user interfaces and pagers where generic
+  completion reporting is not useful.
+
+Only confirmed automatic reporters and deliberately chosen interactive commands
+are defaults. Opt-in reporters, terminal consumers, libraries, and
+version-gated entries are intentionally omitted; users can still add or remove
+rules with `--exclude`/`--include` and `--no-default-exclusions`.
+
+Source attribution and version assumptions are maintained in this README and the
+repository history, not in the runtime file. The registry is not a runtime
+network source. Update it manually from upstream release notes and observed
+command behavior. No version detection is performed at runtime; older
+installations or disabled plugins can be handled with `--exclude`/`--include`.
 
 ## Testing
 

@@ -1,7 +1,7 @@
 # Internal helpers for nu-program-status. Not part of the public API.
 
 const _program_status_dir = (path self | path dirname)
-const _program_status_registry_path = ($_program_status_dir | path join "data" "native-reporters.nuon")
+const _program_status_registry_path = ($_program_status_dir | path join "data" "exclusions.nuon")
 
 export def _program-status-truncate [text: string, limit: int] : nothing -> string {
     mut result = ""
@@ -130,24 +130,17 @@ export def _program-status-normalize-prefix [value] {
 
 export def _program-status-native-rules [] {
     _program-status-load-native-reporters | each {|entry|
-        let automatic = ($entry.automatic? | default false)
-        let opt_in = ($entry.opt_in? | default false)
-        let commands = ($entry.commands? | default [])
-        $commands | each {|cmd|
+        let prefix = (_program-status-normalize-prefix ($entry.prefix? | default []))
+        if ($prefix | is-empty) {
+            null
+        } else {
             {
                 origin: "builtin"
-                source: ($entry.id? | default "")
-                name: ($entry.name? | default "")
-                automatic: $automatic
-                opt_in: $opt_in
-                minimum_version: ($entry.minimum_version? | default null)
-                evidence_url: ($entry.evidence_url? | default null)
-                checked_date: ($entry.checked_date? | default null)
-                note: ($entry.note? | default null)
-                prefix: (_program-status-normalize-prefix $cmd)
+                prefix: $prefix
+                reason: ($entry.reason? | default "native-status")
             }
         }
-    } | flatten
+    } | where {|r| $r != null }
 }
 
 export def _program-status-user-rules [values, origin: string] {
@@ -159,15 +152,8 @@ export def _program-status-user-rules [values, origin: string] {
         } else {
             {
                 origin: $origin
-                source: "user"
-                name: ($prefix | str join " ")
-                automatic: false
-                opt_in: false
-                minimum_version: null
-                evidence_url: null
-                checked_date: null
-                note: null
                 prefix: $prefix
+                reason: "user-config"
             }
         }
     } | where {|r| $r != null }
@@ -177,7 +163,7 @@ export def _program-status-effective-rules [] {
     let defaults_enabled = (_program-status-env-bool-any ["PROGRAM_STATUS_DEFAULT_EXCLUSIONS" "PROGRAM_STATUS_USE_DEFAULT_EXCLUSIONS"] true)
     mut rules = []
     if $defaults_enabled {
-        $rules = (_program-status-native-rules | where {|r| $r.automatic and (not $r.opt_in) })
+        $rules = (_program-status-native-rules)
     }
 
     let user_excludes = (_program-status-env-list-any ["PROGRAM_STATUS_EXCLUDED_COMMANDS"])

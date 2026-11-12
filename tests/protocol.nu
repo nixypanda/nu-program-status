@@ -106,12 +106,12 @@ assert (($rules | length) >= 0)
 # Normalization handles padded structured tokens.
 assert ((_program-status-normalize-prefix ["docker" " agent "]) == ["docker" "agent"])
 
-# Curated defaults are automatic and not opt-in.
+# Curated defaults are built-in exclusions.
 $env.PROGRAM_STATUS_DEFAULT_EXCLUSIONS = true
 $env.PROGRAM_STATUS_EXCLUDED_COMMANDS = []
 $env.PROGRAM_STATUS_INCLUDED_COMMANDS = []
 let defaults = (_program-status-effective-rules)
-assert ($defaults | all {|r| $r.origin == "builtin" and $r.automatic and (not $r.opt_in) })
+assert ($defaults | all {|r| $r.origin == "builtin" and ($r.reason in ["native-status" "interactive"]) })
 
 # Includes are exact normalized prefixes, not broader exceptions.
 $env.PROGRAM_STATUS_DEFAULT_EXCLUSIONS = false

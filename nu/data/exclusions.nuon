@@ -1,0 +1,43 @@
+# Curated default exclusions for nu-program-status.
+# Each record contains only the runtime-relevant prefix and reason.
+# Source attribution, version assumptions, and curation guidance live in README.md.
+[
+    { prefix: ["opencode"], reason: "native-status" }
+    { prefix: ["claude"], reason: "native-status" }
+    { prefix: ["codex"], reason: "native-status" }
+    { prefix: ["crush"], reason: "native-status" }
+    { prefix: ["amp"], reason: "native-status" }
+    { prefix: ["goose"], reason: "native-status" }
+    { prefix: ["pi"], reason: "native-status" }
+    { prefix: ["docker", "agent"], reason: "native-status" }
+    { prefix: ["agy"], reason: "native-status" }
+    { prefix: ["vibe"], reason: "native-status" }
+    { prefix: ["qoder"], reason: "native-status" }
+    { prefix: ["qodercli"], reason: "native-status" }
+    { prefix: ["droid"], reason: "native-status" }
+
+    { prefix: ["nvim"], reason: "interactive" }
+    { prefix: ["vim"], reason: "interactive" }
+    { prefix: ["vi"], reason: "interactive" }
+    { prefix: ["nano"], reason: "interactive" }
+    { prefix: ["emacs"], reason: "interactive" }
+    { prefix: ["top"], reason: "interactive" }
+    { prefix: ["htop"], reason: "interactive" }
+    { prefix: ["btop"], reason: "interactive" }
+    { prefix: ["btm"], reason: "interactive" }
+    { prefix: ["lazygit"], reason: "interactive" }
+    { prefix: ["tig"], reason: "interactive" }
+    { prefix: ["gitui"], reason: "interactive" }
+    { prefix: ["yazi"], reason: "interactive" }
+    { prefix: ["ranger"], reason: "interactive" }
+    { prefix: ["lf"], reason: "interactive" }
+    { prefix: ["nnn"], reason: "interactive" }
+    { prefix: ["mc"], reason: "interactive" }
+    { prefix: ["zellij"], reason: "interactive" }
+    { prefix: ["tmux"], reason: "interactive" }
+    { prefix: ["screen"], reason: "interactive" }
+    { prefix: ["fzf"], reason: "interactive" }
+    { prefix: ["sk"], reason: "interactive" }
+    { prefix: ["watch"], reason: "interactive" }
+    { prefix: ["less"], reason: "interactive" }
+]
