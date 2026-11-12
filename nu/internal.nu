@@ -1,5 +1,8 @@
 # Internal helpers for nu-program-status. Not part of the public API.
 
+const _program_status_dir = (path self | path dirname)
+const _program_status_registry_path = ($_program_status_dir | path join "data" "native-reporters.nuon")
+
 export def _program-status-truncate [text: string, limit: int] : nothing -> string {
     mut result = ""
     mut bytes = 0
@@ -26,7 +29,182 @@ export def _program-status-valid-id [value: string] : nothing -> bool {
     $value =~ '^[A-Za-z0-9_.+-]{1,32}(/[A-Za-z0-9_.+-]{1,32}){0,7}$'
 }
 
-export def _program-status-is-agent-direct [command: string] : nothing -> bool {
+export def _program-status-as-list [value] {
+    if ($value == null) {
+        return []
+    }
+    if (($value | describe) | str starts-with "list") {
+        return $value
+    }
+    $value | into string | split row --regex '\s+'
+}
+
+export def _program-status-env-list-any [names: list<string>] {
+    for $name in $names {
+        let raw = (try { $env | get $name } catch { null })
+        if ($raw != null) {
+            return (_program-status-as-list $raw)
+        }
+    }
+    []
+}
+
+export def _program-status-env-bool-any [names: list<string>, default: bool] {
+    for $name in $names {
+        let raw = (try { $env | get $name } catch { null })
+        if ($raw != null) {
+            if (($raw | describe) == "bool") {
+                return $raw
+            }
+            let s = ($raw | into string | str trim | str lowercase)
+            if ($s in ["1" "true" "yes" "on"]) {
+                return true
+            }
+            if ($s in ["0" "false" "no" "off" ""]) {
+                return false
+            }
+            return $default
+        }
+    }
+    $default
+}
+
+export def _program-status-load-native-reporters [] {
+    if not ($_program_status_registry_path | path exists) {
+        return []
+    }
+    try {
+        open $_program_status_registry_path
+    } catch {
+        []
+    }
+}
+
+export def _program-status-normalize-prefix [value] {
+    # Accept a string or a list of strings.  Each string is split on
+    # whitespace and every resulting token is trimmed, so padded entries such
+    # as ["docker", " agent "] normalize to ["docker" "agent"].
+    let raw = if (($value | describe) | str starts-with "list") {
+        $value
+    } else {
+        [$value]
+    }
+
+    mut collected = []
+    for $item in $raw {
+        if (($item | describe) | str starts-with "list") {
+            for $sub in $item {
+                $collected = ($collected | append $sub)
+            }
+        } else {
+            $collected = ($collected | append $item)
+        }
+    }
+
+    mut tokens = []
+    for $item in $collected {
+        let split = ($item | into string | split row --regex '\s+')
+        for $part in $split {
+            let trimmed = ($part | str trim)
+            if ($trimmed | is-not-empty) {
+                $tokens = ($tokens | append $trimmed)
+            }
+        }
+    }
+
+    if ($tokens | is-empty) {
+        return []
+    }
+    let first_raw = ($tokens | get 0)
+    let has_caret = ($first_raw | str starts-with "^")
+    mut first = if $has_caret {
+        $first_raw | str substring 1..
+    } else {
+        $first_raw
+    }
+    if ($first | str contains "/") {
+        $first = ($first | path basename)
+    }
+    ([$first] | append ($tokens | skip 1))
+}
+
+export def _program-status-native-rules [] {
+    _program-status-load-native-reporters | each {|entry|
+        let automatic = ($entry.automatic? | default false)
+        let opt_in = ($entry.opt_in? | default false)
+        let commands = ($entry.commands? | default [])
+        $commands | each {|cmd|
+            {
+                origin: "builtin"
+                source: ($entry.id? | default "")
+                name: ($entry.name? | default "")
+                automatic: $automatic
+                opt_in: $opt_in
+                minimum_version: ($entry.minimum_version? | default null)
+                evidence_url: ($entry.evidence_url? | default null)
+                checked_date: ($entry.checked_date? | default null)
+                note: ($entry.note? | default null)
+                prefix: (_program-status-normalize-prefix $cmd)
+            }
+        }
+    } | flatten
+}
+
+export def _program-status-user-rules [values, origin: string] {
+    let values = (_program-status-as-list $values)
+    $values | each {|v|
+        let prefix = (_program-status-normalize-prefix $v)
+        if ($prefix | is-empty) {
+            null
+        } else {
+            {
+                origin: $origin
+                source: "user"
+                name: ($prefix | str join " ")
+                automatic: false
+                opt_in: false
+                minimum_version: null
+                evidence_url: null
+                checked_date: null
+                note: null
+                prefix: $prefix
+            }
+        }
+    } | where {|r| $r != null }
+}
+
+export def _program-status-effective-rules [] {
+    let defaults_enabled = (_program-status-env-bool-any ["PROGRAM_STATUS_DEFAULT_EXCLUSIONS" "PROGRAM_STATUS_USE_DEFAULT_EXCLUSIONS"] true)
+    mut rules = []
+    if $defaults_enabled {
+        $rules = (_program-status-native-rules | where {|r| $r.automatic and (not $r.opt_in) })
+    }
+
+    let user_excludes = (_program-status-env-list-any ["PROGRAM_STATUS_EXCLUDED_COMMANDS"])
+    $rules = ($rules | append (_program-status-user-rules $user_excludes "user"))
+
+    let user_includes = (_program-status-env-list-any ["PROGRAM_STATUS_INCLUDED_COMMANDS" "PROGRAM_STATUS_INCLUDE_COMMANDS"])
+    let include_prefixes = ($user_includes | each {|v| _program-status-normalize-prefix $v })
+
+    $rules = ($rules | where {|r|
+        let key = ($r.prefix | str join "\u{001f}")
+        let included = ($include_prefixes | any {|p| (($p | str join "\u{001f}") == $key) })
+        not $included
+    })
+
+    mut seen = []
+    mut result = []
+    for $r in $rules {
+        let key = ($r.prefix | str join "\u{001f}")
+        if not ($key in $seen) {
+            $seen = ($seen | append $key)
+            $result = ($result | append $r)
+        }
+    }
+    $result
+}
+
+export def _program-status-is-excluded [command: string] : nothing -> bool {
     let trimmed = ($command | str trim)
     if ($trimmed | is-empty) {
         return false
@@ -34,22 +212,45 @@ export def _program-status-is-agent-direct [command: string] : nothing -> bool {
     if (($trimmed | str contains "|") or ($trimmed | str contains ";") or ($trimmed | str contains "&") or ($trimmed | str contains "$") or ($trimmed | str contains "`") or ($trimmed | str contains (char newline))) {
         return false
     }
-    let first = ($trimmed | split row --regex "\\s+" | get 0)
-    let has_caret = ($first | str starts-with "^")
-    let cmd = if $has_caret {
-        $first | str substring 1..
-    } else {
-        $first
-    }
-    let base = if ($cmd | str contains "/") {
-        $cmd | path basename
-    } else {
-        $cmd
-    }
-    let bare_agent = (($cmd | str contains "/") == false) and ($base in ["opencode" "claude" "codex"])
-    let is_direct_syntax = $has_caret or ($cmd | str starts-with "/") or $bare_agent
-    if not $is_direct_syntax {
+
+    let rules = (_program-status-effective-rules)
+    if ($rules | is-empty) {
         return false
     }
-    $base in ["opencode" "claude" "codex"]
+
+    let tokens = ($trimmed | split row --regex '\s+')
+    let max_len = ($rules | get prefix | each {|p| ($p | length) } | math max)
+    let take = if (($tokens | length) < $max_len) { ($tokens | length) } else { $max_len }
+    let sliced = ($tokens | first $take)
+
+    let first_raw = ($sliced | get 0)
+    let has_caret = ($first_raw | str starts-with "^")
+    mut first = if $has_caret {
+        $first_raw | str substring 1..
+    } else {
+        $first_raw
+    }
+    if ($first | str contains "/") {
+        $first = ($first | path basename)
+    }
+    let norm_cmd = ([$first] | append ($sliced | skip 1))
+
+    for $r in $rules {
+        let rlen = ($r.prefix | length)
+        if (($norm_cmd | length) >= $rlen) {
+            let slice = ($norm_cmd | first $rlen)
+            if (($slice | to nuon) == ($r.prefix | to nuon)) {
+                return true
+            }
+        }
+    }
+    false
+}
+
+export def _program-status-is-agent-direct [command: string] : nothing -> bool {
+    _program-status-is-excluded $command
+}
+
+export def _program-status-command-excluded [command: string] : nothing -> bool {
+    _program-status-is-excluded $command
 }

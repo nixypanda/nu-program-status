@@ -11,40 +11,22 @@
 use ./internal.nu [
     _program-status-truncate
     _program-status-sanitize
-    _program-status-is-agent-direct
+    _program-status-is-excluded
 ]
 use ./mod.nu *
 
-def _program-status-personal-excluded [command: string] : nothing -> bool {
-    let trimmed = ($command | str trim)
-    if ($trimmed | is-empty) {
-        return false
-    }
-    let first = ($trimmed | split row --regex "\\s+" | get 0)
-    let has_caret = ($first | str starts-with "^")
-    let cmd = if $has_caret {
-        $first | str substring 1..
-    } else {
-        $first
-    }
-    let base = if ($cmd | str contains "/") {
-        $cmd | path basename
-    } else {
-        $cmd
-    }
-    let excluded = ($env.PROGRAM_STATUS_EXCLUDED_COMMANDS? | default [])
-    let list = if (($excluded | describe) | str starts-with "list") {
-        $excluded
-    } else {
-        $excluded | split row --regex "\\s+"
-    }
-    ($base in $list) or ($cmd in $list) or ($first in $list)
-}
-
 export def --env "program-status install-hooks" [
     --min-duration: duration
+    --exclude: list<string>
     --excluded: list<string>
+    --include: list<string>
+    --no-default-exclusions
+    --default-exclusions
 ] {
+    if ($no_default_exclusions and $default_exclusions) {
+        error make { msg: "use either --no-default-exclusions or --default-exclusions, not both" }
+    }
+
     # Establish defaults without overwriting explicit prior configuration.
     if ($env.PROGRAM_STATUS_ENABLED? == null) {
         $env.PROGRAM_STATUS_ENABLED = true
@@ -62,12 +44,35 @@ export def --env "program-status install-hooks" [
     }
     $env.PROGRAM_STATUS_MIN_DURATION_MS = ($threshold_ms | into string)
 
-    let excluded_value = if ($excluded != null) {
+    let excluded_value = if ($exclude != null) {
+        $exclude
+    } else if ($excluded != null) {
         $excluded
     } else {
-        ($env.PROGRAM_STATUS_EXCLUDED_COMMANDS? | default [])
+        (try { $env.PROGRAM_STATUS_EXCLUDED_COMMANDS } catch { [] })
     }
+    let included_value = if ($include != null) {
+        $include
+    } else {
+        (try { $env.PROGRAM_STATUS_INCLUDED_COMMANDS } catch { [] })
+    }
+
+    let existing_default = (try { $env.PROGRAM_STATUS_DEFAULT_EXCLUSIONS } catch { true })
+    let default_value = if $no_default_exclusions {
+        false
+    } else if $default_exclusions {
+        true
+    } else {
+        if (($existing_default | describe) == "bool") {
+            $existing_default
+        } else {
+            (($existing_default | into string | str lowercase) == "true")
+        }
+    }
+
     $env.PROGRAM_STATUS_EXCLUDED_COMMANDS = $excluded_value
+    $env.PROGRAM_STATUS_INCLUDED_COMMANDS = $included_value
+    $env.PROGRAM_STATUS_DEFAULT_EXCLUSIONS = $default_value
 
     $env.PROGRAM_STATUS_PENDING = false
     $env.PROGRAM_STATUS_PENDING_LABEL = ""
@@ -172,7 +177,7 @@ export def --env "program-status install-hooks" [
         }
         $env.PROGRAM_STATUS_PENDING = true
         $env.PROGRAM_STATUS_PENDING_LABEL = $label
-        $env.PROGRAM_STATUS_PENDING_EXCLUDED = ((_program-status-is-agent-direct $cmd) or (_program-status-personal-excluded $cmd))
+        $env.PROGRAM_STATUS_PENDING_EXCLUDED = (_program-status-is-excluded $cmd)
         null
     }
 

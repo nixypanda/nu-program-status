@@ -7,6 +7,7 @@ use ./internal.nu [
     _program-status-truncate
     _program-status-sanitize
     _program-status-valid-id
+    _program-status-effective-rules
 ]
 
 export def "program-status encode" [
@@ -100,4 +101,8 @@ export def "program-status emit" [
     if (is-terminal) {
         print --no-newline $seq
     }
+}
+
+export def "program-status exclusions" [] {
+    _program-status-effective-rules
 }

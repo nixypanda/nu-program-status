@@ -6,7 +6,9 @@ use ../nu/mod.nu *
 use ../nu/internal.nu [
     _program-status-truncate
     _program-status-sanitize
-    _program-status-is-agent-direct
+    _program-status-is-excluded
+    _program-status-effective-rules
+    _program-status-normalize-prefix
 ]
 
 # Base module import does not install hooks or reporting state.
@@ -74,18 +76,49 @@ let seq_max = (program-status encode blocked --kind auth --app myapp --id a/b --
 assert (($seq_max | into binary | length) <= 4096)
 
 # Exclusion helper
-assert (_program-status-is-agent-direct "opencode")
-assert (_program-status-is-agent-direct "claude")
-assert (_program-status-is-agent-direct "codex")
-assert (_program-status-is-agent-direct "^opencode")
-assert (_program-status-is-agent-direct "/usr/local/bin/codex")
-assert (not (_program-status-is-agent-direct "./opencode"))
-assert (not (_program-status-is-agent-direct "echo opencode"))
-assert (not (_program-status-is-agent-direct "opencode | cat"))
-assert (not (_program-status-is-agent-direct "opencode; rm -rf /"))
-assert (not (_program-status-is-agent-direct "opencode && ls"))
-assert (_program-status-is-agent-direct $"opencode(char tab)foo")
-assert (_program-status-is-agent-direct "^/usr/bin/opencode")
-assert (_program-status-is-agent-direct "/usr/bin/opencode --foo")
+assert (_program-status-is-excluded "opencode")
+assert (_program-status-is-excluded "claude")
+assert (_program-status-is-excluded "codex")
+assert (_program-status-is-excluded "docker agent")
+assert (_program-status-is-excluded "^opencode")
+assert (_program-status-is-excluded "/usr/local/bin/codex")
+assert (not (_program-status-is-excluded "echo opencode"))
+assert (not (_program-status-is-excluded "opencode | cat"))
+assert (not (_program-status-is-excluded "opencode; rm -rf /"))
+assert (not (_program-status-is-excluded "opencode && ls"))
+assert (_program-status-is-excluded $"opencode(char tab)foo")
+assert (_program-status-is-excluded "^/usr/bin/opencode")
+assert (_program-status-is-excluded "/usr/bin/opencode --foo")
+assert (_program-status-is-excluded "docker agent run foo")
+
+# Include/exclude precedence smoke.
+$env.PROGRAM_STATUS_DEFAULT_EXCLUSIONS = false
+$env.PROGRAM_STATUS_EXCLUDED_COMMANDS = ["docker agent"]
+$env.PROGRAM_STATUS_INCLUDED_COMMANDS = ["opencode"]
+assert (_program-status-is-excluded "docker agent run")
+assert (not (_program-status-is-excluded "docker ps"))
+assert (not (_program-status-is-excluded "opencode"))
+
+# Inspection API is side-effect free and returns rules.
+let rules = (program-status exclusions)
+assert (($rules | length) >= 0)
+
+# Normalization handles padded structured tokens.
+assert ((_program-status-normalize-prefix ["docker" " agent "]) == ["docker" "agent"])
+
+# Curated defaults are automatic and not opt-in.
+$env.PROGRAM_STATUS_DEFAULT_EXCLUSIONS = true
+$env.PROGRAM_STATUS_EXCLUDED_COMMANDS = []
+$env.PROGRAM_STATUS_INCLUDED_COMMANDS = []
+let defaults = (_program-status-effective-rules)
+assert ($defaults | all {|r| $r.origin == "builtin" and $r.automatic and (not $r.opt_in) })
+
+# Includes are exact normalized prefixes, not broader exceptions.
+$env.PROGRAM_STATUS_DEFAULT_EXCLUSIONS = false
+$env.PROGRAM_STATUS_EXCLUDED_COMMANDS = ["docker agent"]
+$env.PROGRAM_STATUS_INCLUDED_COMMANDS = ["docker"]
+assert (_program-status-is-excluded "docker agent run")
+$env.PROGRAM_STATUS_INCLUDED_COMMANDS = ["docker agent"]
+assert (not (_program-status-is-excluded "docker agent run"))
 
 print "protocol tests passed"
