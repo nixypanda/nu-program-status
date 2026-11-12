@@ -178,6 +178,43 @@ export def --env "program-status install-hooks" [
         $env.PROGRAM_STATUS_PENDING = true
         $env.PROGRAM_STATUS_PENDING_LABEL = $label
         $env.PROGRAM_STATUS_PENDING_EXCLUDED = (_program-status-is-excluded $cmd)
+
+        let had_last = ($env.LAST_EXIT_CODE? != null)
+        let had_dur = ($env.CMD_DURATION_MS? != null)
+        let saved_last = ($env.LAST_EXIT_CODE? | default null)
+        let saved_dur = ($env.CMD_DURATION_MS? | default null)
+
+        let enabled_raw = ($env.PROGRAM_STATUS_ENABLED? | default true)
+        let enabled = if (($enabled_raw | describe) == "bool") {
+            $enabled_raw
+        } else {
+            (($enabled_raw | into string | str lowercase) == "true")
+        }
+        let excluded_raw = ($env.PROGRAM_STATUS_PENDING_EXCLUDED? | default false)
+        let excluded = if (($excluded_raw | describe) == "bool") {
+            $excluded_raw
+        } else {
+            (($excluded_raw | into string | str lowercase) == "true")
+        }
+
+        if ($enabled and ($label | str trim | is-not-empty) and (not $excluded)) {
+            if (is-terminal) {
+                try {
+                    print --no-newline (program-status encode working --app "nu" --title $label --message "running")
+                } catch { }
+            }
+        }
+
+        if $had_last {
+            $env.LAST_EXIT_CODE = $saved_last
+        } else {
+            hide-env -i LAST_EXIT_CODE
+        }
+        if $had_dur {
+            $env.CMD_DURATION_MS = $saved_dur
+        } else {
+            hide-env -i CMD_DURATION_MS
+        }
         null
     }
 

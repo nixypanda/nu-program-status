@@ -224,19 +224,27 @@ def main():
         else:
             print("PASS:", msg)
 
-    # Short command: no OSC.
+    # Short command: working is immediate; completion stays below threshold.
     session = NuSession(fake_bin, min_duration="100ms")
     out = session.run("true")
-    check(len(osc_sequences(out)) == 0, "short command emits no status")
+    seqs = osc_sequences(out)
+    check(
+        len(seqs) >= 1 and seqs[0].startswith("state=working"),
+        "short command emits working (got {})".format(seqs),
+    )
+    check(
+        not any(s.startswith(("state=done", "state=error", "state=idle")) for s in seqs),
+        "short command emits no terminal outcome (got {})".format(seqs),
+    )
     session.close()
 
-    # Long command: done.
+    # Long command: working then done.
     session = NuSession(fake_bin, min_duration="100ms")
     out = session.run("/bin/sleep 2")
     seqs = osc_sequences(out)
     check(
-        len(seqs) >= 1 and seqs[-1].startswith("state=done"),
-        "long command emits done (got {})".format(seqs),
+        len(seqs) >= 2 and seqs[0].startswith("state=working") and seqs[-1].startswith("state=done"),
+        "long command emits working then done (got {})".format(seqs),
     )
     session.close()
 
@@ -264,23 +272,23 @@ def main():
         check(False, "privacy case emitted no status")
     session.close()
 
-    # Raw, uncaught external failure: error.
+    # Raw, uncaught external failure: working then error.
     session = NuSession(fake_bin, min_duration="100ms")
     out = session.run("bash -c 'sleep 2; exit 7'")
     seqs = osc_sequences(out)
     check(
-        len(seqs) >= 1 and seqs[-1].startswith("state=error"),
-        "raw external failure emits error (got {})".format(seqs),
+        len(seqs) >= 2 and seqs[0].startswith("state=working") and seqs[-1].startswith("state=error"),
+        "raw external failure emits working then error (got {})".format(seqs),
     )
     session.close()
 
-    # Handled failure: done.
+    # Handled failure: working then done.
     session = NuSession(fake_bin, min_duration="100ms")
     out = session.run("try { bash -c 'sleep 2; exit 7' }")
     seqs = osc_sequences(out)
     check(
-        len(seqs) >= 1 and seqs[-1].startswith("state=done"),
-        "handled failure emits done (got {})".format(seqs),
+        len(seqs) >= 2 and seqs[0].startswith("state=working") and seqs[-1].startswith("state=done"),
+        "handled failure emits working then done (got {})".format(seqs),
     )
     session.close()
 
@@ -289,14 +297,14 @@ def main():
     out = session.run("bash -c 'sleep 2; exit 1'")
     seqs = osc_sequences(out)
     check(
-        len(seqs) >= 1 and seqs[-1].startswith("state=error"),
-        "internal error emits error (got {})".format(seqs),
+        len(seqs) >= 2 and seqs[0].startswith("state=working") and seqs[-1].startswith("state=error"),
+        "internal error emits working then error (got {})".format(seqs),
     )
     out = session.run("/bin/sleep 2")
     seqs = osc_sequences(out)
     check(
-        len(seqs) >= 1 and seqs[-1].startswith("state=done"),
-        "success after error emits done (got {})".format(seqs),
+        len(seqs) >= 2 and seqs[0].startswith("state=working") and seqs[-1].startswith("state=done"),
+        "success after error emits working then done (got {})".format(seqs),
     )
     session.close()
 
@@ -309,16 +317,32 @@ def main():
     check("ABSENT" in out.decode("utf-8", "replace"), "CMD_DURATION_MS restored to absent")
     session.close()
 
-    # Default threshold (10000 ms): a 2 s command is suppressed.
+    # Default threshold (10000 ms): terminal outcome is suppressed, working is immediate.
     session = NuSession(fake_bin)
     out = session.run("/bin/sleep 2")
-    check(len(osc_sequences(out)) == 0, "default threshold suppresses 2 s command")
+    seqs = osc_sequences(out)
+    check(
+        len(seqs) >= 1 and seqs[0].startswith("state=working"),
+        "default threshold still emits working (got {})".format(seqs),
+    )
+    check(
+        not any(s.startswith(("state=done", "state=error", "state=idle")) for s in seqs),
+        "default threshold suppresses terminal outcome (got {})".format(seqs),
+    )
     session.close()
 
     # Explicit reinstall lowers the configured threshold.
-    session = NuSession(fake_bin, min_duration="10s")
+    session = NuSession(fake_bin, min_duration="10sec")
     out = session.run("/bin/sleep 2")
-    check(len(osc_sequences(out)) == 0, "high threshold suppresses 2 s command")
+    seqs = osc_sequences(out)
+    check(
+        len(seqs) >= 1 and seqs[0].startswith("state=working"),
+        "high threshold still emits working (got {})".format(seqs),
+    )
+    check(
+        not any(s.startswith(("state=done", "state=error", "state=idle")) for s in seqs),
+        "high threshold suppresses terminal outcome (got {})".format(seqs),
+    )
     session.run("program-status install-hooks --min-duration 100ms")
     session.close()
 
@@ -334,8 +358,8 @@ def main():
     out = session.run("true")
     seqs = osc_sequences(out)
     check(
-        len(seqs) >= 1 and seqs[-1].startswith("state=done"),
-        "environment threshold override reports fast command (got {})".format(seqs),
+        len(seqs) >= 2 and seqs[0].startswith("state=working") and seqs[-1].startswith("state=done"),
+        "environment threshold override reports working then done (got {})".format(seqs),
     )
     session.close()
 
@@ -350,8 +374,8 @@ def main():
     out = session.run("/bin/sleep 2")
     seqs = osc_sequences(out)
     check(
-        len(seqs) >= 1 and seqs[-1].startswith("state=done"),
-        "enabled startup toggle reports status (got {})".format(seqs),
+        len(seqs) >= 2 and seqs[0].startswith("state=working") and seqs[-1].startswith("state=done"),
+        "enabled startup toggle reports working then done (got {})".format(seqs),
     )
     session.close()
 

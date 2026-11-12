@@ -106,7 +106,7 @@ pinned; older versions may differ in hook/config behavior.
 
 ## Notes
 
-- Completion-only: no `working` state is emitted automatically.
+- Lifecycle: `working` is emitted immediately before an eligible foreground command starts; the terminal `done`, `error`, or `idle` outcome is emitted on completion when it meets `--min-duration`. Short commands can therefore show `working` and then be cleared by the shell prompt before a terminal outcome is reported.
 - Only the first command token is retained as a sanitized, truncated label; arguments are never stored or emitted.
 - `LAST_EXIT_CODE` and `CMD_DURATION_MS` are restored after reporting, including their previous absence.
 - Compound commands, pipelines, and dynamic invocations are not parsed as a shell AST and are not treated as excluded native reporters.
